@@ -12,7 +12,6 @@ import StatusButton from "./components/StatusButton.vue";
 import * as PluginKit from '@ciderapp/pluginkit';
 import { definePluginContext } from '@ciderapp/pluginkit'
 import PluginConfig from './plugin.config';
-// import * as WebSocket from 'ws';
 import { useCiderAudio } from '@ciderapp/pluginkit';
 import { addImmersiveLayout, addMainMenuEntry, createModal, addImmersiveMenuEntry, addCustomButton, addMediaItemContextMenuEntry } from '@ciderapp/pluginkit';
 
@@ -49,11 +48,18 @@ export const CustomElements = {
   }),
 };
 
+
+
+
+
 const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = definePluginContext({
     ...PluginConfig,
     CustomElements,
     setup() {
         let socket: WebSocket | null = null;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        const RECONNECT_DELAY = 5000;
         const musicKit = PluginKit.useMusicKit();
         const cider = PluginKit.useCider();
 
@@ -64,30 +70,50 @@ const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = defineP
 
         this.SettingsElement = customElementName('settings');
 
+
         const initWebSocket = () => {
             try {
                 socket = new WebSocket('ws://localhost:8974');
-                socket.onopen = () => { console.log('WebNowPlaying: WebSocket connected');
-                updateConnectionStatus(true);
-    };
-                socket.onerror = (error: Event) => { console.error('WebNowPlaying: WebSocket error:', error);
+                
+                socket.onopen = () => {
+                    console.log('WebNowPlaying: WebSocket connected');
+                    updateConnectionStatus(true);
+                    reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+                    emitPlaybackInfo(); // Send initial playback info
+                };
+
+                socket.onerror = (error: Event) => {
+                    console.error('WebNowPlaying: WebSocket error:', error);
                     updateConnectionStatus(false);
-    };
+                };
+
                 socket.onclose = () => {
                     console.warn('WebNowPlaying: WebSocket closed');
                     updateConnectionStatus(false);
-                    setTimeout(initWebSocket, 5000);
+                    handleReconnection();
                 };
+
                 socket.onmessage = (event: MessageEvent) => {
-                    const command = event.data.toString();
-                    handleWebNowPlayingCommand(command);
+                    handleWebNowPlayingCommand(event.data.toString());
                 };
             } catch (error) {
                 console.error(`WebNowPlaying: Failed to create WebSocket: ${error}`);
+
                 updateConnectionStatus(false);
-                setTimeout(initWebSocket, 5000);
+                handleReconnection();
             }
         };
+
+        const handleReconnection = () => {
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                const delay = RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts);
+                reconnectAttempts++;
+                setTimeout(initWebSocket, delay);
+            } else {
+                console.error('WebNowPlaying: Max reconnection attempts reached');
+            }
+        };
+
 
         function updateConnectionStatus(isConnected: boolean) {
             const statusButtonElement = document.querySelector('status-button');
@@ -97,92 +123,113 @@ const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = defineP
             }
           }
 
-        const emitPlaybackInfo = () => {
+          const emitPlaybackInfo = () => {
             if (!socket || socket.readyState !== WebSocket.OPEN) {
                 console.warn('WebNowPlaying: Cannot emit playback info: WebSocket not connected');
                 return;
             }
-
-            const nowPlayingItem = musicKit.player.nowPlayingItem;
-            const playbackState = musicKit.player.playbackState;
-
-            PluginKit.useMessageListener('unload', () => {
-                if (socket) {
-                    socket.close();
-                }
-            });
-            
-            const info = {
-                player: 'Cider',
-                state: playbackState === 2 ? 1 : 2, // 1 for playing, 2 for paused
-                title: nowPlayingItem?.title || 'Unknown Title',
-                artist: nowPlayingItem?.artistName || 'Unknown Artist',
-                album: nowPlayingItem?.albumName || 'Unknown Album',
-                cover: nowPlayingItem?.artwork?.url || '',
-                duration: nowPlayingItem?.playbackDuration || 0,
-                position: musicKit.player.currentPlaybackTime || 0,
-                rating: nowPlayingItem?.rating || 0,
-                repeat: musicKit.player.repeatMode,
-                shuffle: musicKit.player.shuffleMode ? 1 : 0
-            };
-
+        
+            const nowPlayingItem = musicKit.player?.nowPlayingItem;
+            if (!nowPlayingItem) {
+                console.debug('WebNowPlaying: No track currently playing');
+                return;
+            }
+        
             try {
-                socket.send(JSON.stringify(info));
+                const info = [
+                    `PLAYER:Cider`,
+                    `STATE:${musicKit.player.isPlaying ? 1 : 2}`,
+                    `TITLE:${nowPlayingItem.title || 'Unknown Title'}`,
+                    `ARTIST:${nowPlayingItem.artistName || 'Unknown Artist'}`,
+                    `ALBUM:${nowPlayingItem.albumName || 'Unknown Album'}`,
+                    `COVER:${nowPlayingItem.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || ''}`,
+                    `DURATION:${(nowPlayingItem.playbackDuration || 0) * 1000}`, // Convert to milliseconds
+                    `POSITION:${(musicKit.player.currentPlaybackTime || 0) * 1000}`, // Convert to milliseconds
+                    `VOLUME:${Math.round(cider.audio.volume * 100)}`,
+                    `RATING:${nowPlayingItem.rating || 0}`,
+                    `REPEAT:${musicKit.player.repeatMode}`,
+                    `SHUFFLE:${musicKit.player.shuffleMode ? 1 : 0}`
+                ].join('\n');
+        
+                socket.send(info);
             } catch (error) {
                 console.error(`WebNowPlaying: Failed to send playback info: ${error}`);
-                    setTimeout(initWebSocket, 5000);
             }
-
         };
-const handleWebNowPlayingCommand = (command: string) => {
-                switch (command) {
-                    case 'Play':
-                        cider.playbackService.play();
-                        break;
-                    case 'Pause':
-                        cider.playbackService.pause();
-                        break;
-                    case 'PlayPause':
-                        cider.playbackService.playPause();
-                        break;
-                    case 'Next':
-                        cider.playbackService.next();
-                        break;
-                    case 'Previous':
-                        cider.playbackService.previous();
-                        break;
-                    case 'Stop':
-                        cider.playbackService.stop();
-                        break;
-                    case 'Repeat':
-                        cider.playbackService.toggleRepeat();
-                        break;
-                    case 'Shuffle':
-                        cider.playbackService.toggleShuffle();
-                        break;
-                    default:
-                        if (command.startsWith('SetPosition ')) {
-                            const position = parseFloat(command.split(' ')[1]);
-                            if (!isNaN(position)) {
-                                cider.playbackService.seekTo(position);
+
+            const handleWebNowPlayingCommand = (rawCommand: string) => {
+                const commandParts = rawCommand.trim().split(' ');
+                const command = commandParts[0].toUpperCase();
+                const value = commandParts[1];
+    
+                try {
+                    switch (command) {
+                        case 'PLAYPAUSE':
+                            cider.playbackService.playPause();
+                            break;
+                        case 'PLAY':
+                            cider.playbackService.play();
+                            break;
+                        case 'PAUSE':
+                            cider.playbackService.pause();
+                            break;
+                        case 'NEXT':
+                            cider.playbackService.next();
+                            break;
+                        case 'PREVIOUS':
+                            cider.playbackService.previous();
+                            break;
+                        case 'STOP':
+                            cider.playbackService.stop();
+                            break;
+                        case 'REPEAT':
+                            cider.playbackService.toggleRepeat();
+                            break;
+                        case 'SHUFFLE':
+                            cider.playbackService.toggleShuffle();
+                            break;
+                        case 'SETPOSITION':
+                            if (value) {
+                                const position = parseFloat(value);
+                                if (!isNaN(position)) {
+                                    cider.playbackService.seekTo(position / 1000); // Convert to seconds
+                                }
                             }
-                        } else if (command.startsWith('SetVolume ')) {
-                            const volume = parseFloat(command.split(' ')[1]);
-                            if (!isNaN(volume)) {
-                                cider.audio.volume = volume / 100;
+                            break;
+                        case 'SETVOLUME':
+                            if (value) {
+                                const volume = Math.min(Math.max(parseFloat(value), 0), 100);
+                                if (!isNaN(volume)) {
+                                    cider.audio.volume = volume / 100;
+                                }
                             }
-                        }
-                }
-                // After executing any command, update the playback info
-                emitPlaybackInfo();
-            };
+                            break;
+                    }
 
             
-                // Initialize WebSocket connection
-                initWebSocket();
-                // Register playback listeners
+            
+                // Update playback info after command execution
+                setTimeout(emitPlaybackInfo, 100);
+            } catch (error) {
+                console.error(`WebNowPlaying: Error handling command ${command}:`, error);
+            }
+        };
+
+        // Initialize WebSocket connection
+        initWebSocket();
+
+        // Register playback listeners
         PluginKit.useMessageListener('playbackStateDidChange', emitPlaybackInfo);
         PluginKit.useMessageListener('nowPlayingItemDidChange', emitPlaybackInfo);
+        PluginKit.useMessageListener('playbackTimeDidChange', emitPlaybackInfo);
+        PluginKit.useMessageListener('volumeDidChange', emitPlaybackInfo);
+
+        PluginKit.useMessageListener('unload', () => {
+            if (socket?.readyState === WebSocket.OPEN) {
+                socket.close();
+                socket = null;
+            }
+        });
 
 
         
@@ -284,9 +331,4 @@ export function useConfig() {
 export { setupConfig, customElementName, goToPage, useCPlugin };
 export default plugin;
 
-
-
-
-
-
-        
+   
