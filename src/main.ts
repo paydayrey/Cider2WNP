@@ -1,140 +1,98 @@
-//Import template custom elements
 import { defineCustomElement } from 'vue'
 import type { App } from 'vue'
-import { createPinia } from "pinia";
-import HelloWorld from "./components/HelloWorld.vue";
-import MySettings from "./components/MySettings.vue";
-import ModalExample from "./components/ModalExample.vue";
-import CustomImmersiveLayout from "./components/CustomImmersiveLayout.vue";
-import CustomPage from "./pages/CustomPage.vue";
-import StatusButton from "./components/StatusButton.vue";
-//Import CWNP elements
-import * as PluginKit from '@ciderapp/pluginkit';
+import { createPinia } from "pinia"
+import StatusButton from "./components/StatusButton.vue"
+import * as PluginKit from '@ciderapp/pluginkit'
 import { definePluginContext } from '@ciderapp/pluginkit'
-import PluginConfig from './plugin.config';
-import { useCiderAudio } from '@ciderapp/pluginkit';
-import { addImmersiveLayout, addMainMenuEntry, createModal, addImmersiveMenuEntry, addCustomButton, addMediaItemContextMenuEntry } from '@ciderapp/pluginkit';
+import PluginConfig from './plugin.config'
+import { createModal } from '@ciderapp/pluginkit'
 
-const pinia = createPinia();
+const pinia = createPinia()
 
 function configureApp(app: App) {
-    app.use(pinia);
+    app.use(pinia)
 }
 
 export const CustomElements = {
-    'hello-world': defineCustomElement(HelloWorld, {
-        shadowRoot: false,
-        configureApp
-    }),
-    'settings': defineCustomElement(MySettings, {
-        shadowRoot: false,
-        configureApp
-    }),
-    'modal-example': defineCustomElement(ModalExample, {
-        shadowRoot: false,
-        configureApp
-    }),
-    'page-helloworld': defineCustomElement(CustomPage, {
-        shadowRoot: false,
-        configureApp
-    }),
-    'immersive-layout': defineCustomElement(CustomImmersiveLayout, {
-        shadowRoot: false,
-        configureApp
-    }),
-    'status-button': defineCustomElement(StatusButton, {
-    shadowRoot: false,
-    configureApp
-  }),
-};
+    'status-button': defineCustomElement(StatusButton, { shadowRoot: false, configureApp }),
+}
 
-
-
-
-
-const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = definePluginContext({
+const { plugin, setupConfig, customElementName } = definePluginContext({
     ...PluginConfig,
     CustomElements,
     setup() {
-        let socket: WebSocket | null = null;
-        let reconnectAttempts = 0;
-        const MAX_RECONNECT_ATTEMPTS = 5;
-        const RECONNECT_DELAY = 5000;
-        const musicKit = PluginKit.useMusicKit();
-        const cider = PluginKit.useCider();
+        let socket: WebSocket | null = null
+        let reconnectAttempts = 0
+        const MAX_RECONNECT_ATTEMPTS = 5
+        const RECONNECT_DELAY = 5000
+        const musicKit = PluginKit.useMusicKit()
+        const cider = PluginKit.useCider()
 
         for (const [key, value] of Object.entries(CustomElements)) {
-            const _key = key as keyof typeof CustomElements;
+            const _key = key as keyof typeof CustomElements
             customElements.define(customElementName(_key), value)
         }
 
-        this.SettingsElement = customElementName('settings');
-
-
+        // WebSocket initialization and handling
         const initWebSocket = () => {
             try {
-                socket = new WebSocket('ws://localhost:8974');
-                
+                socket = new WebSocket('ws://localhost:8974')
                 socket.onopen = () => {
-                    console.log('WebNowPlaying: WebSocket connected');
-                    updateConnectionStatus(true);
-                    reconnectAttempts = 0; // Reset reconnect attempts on successful connection
-                    emitPlaybackInfo(); // Send initial playback info
-                };
-
+                    console.log('WebNowPlaying: WebSocket connected')
+                    updateConnectionStatus(true)
+                    reconnectAttempts = 0
+                    emitPlaybackInfo()
+                }
                 socket.onerror = (error: Event) => {
-                    console.error('WebNowPlaying: WebSocket error:', error);
-                    updateConnectionStatus(false);
-                };
-
+                    console.error('WebNowPlaying: WebSocket error:', error)
+                    updateConnectionStatus(false)
+                }
                 socket.onclose = () => {
-                    console.warn('WebNowPlaying: WebSocket closed');
-                    updateConnectionStatus(false);
-                    handleReconnection();
-                };
-
+                    console.warn('WebNowPlaying: WebSocket closed')
+                    updateConnectionStatus(false)
+                    handleReconnection()
+                }
                 socket.onmessage = (event: MessageEvent) => {
-                    handleWebNowPlayingCommand(event.data.toString());
-                };
+                    handleWebNowPlayingCommand(event.data.toString())
+                }
             } catch (error) {
-                console.error(`WebNowPlaying: Failed to create WebSocket: ${error}`);
-
-                updateConnectionStatus(false);
-                handleReconnection();
+                console.error(`WebNowPlaying: Failed to create WebSocket: ${error}`)
+                updateConnectionStatus(false)
+                handleReconnection()
             }
-        };
+        }
 
         const handleReconnection = () => {
             if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                const delay = RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts);
-                reconnectAttempts++;
-                setTimeout(initWebSocket, delay);
+                const delay = RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts)
+                reconnectAttempts++
+                setTimeout(initWebSocket, delay)
             } else {
-                console.error('WebNowPlaying: Max reconnection attempts reached');
+                console.error('WebNowPlaying: Max reconnection attempts reached')
             }
-        };
-
+        }
 
         function updateConnectionStatus(isConnected: boolean) {
-            const statusButtonElement = document.querySelector('status-button');
+            const statusButtonElement = document.querySelector('status-button')
             if (statusButtonElement) {
-              // @ts-ignore - Accessing internal method of custom element
-              statusButtonElement.updateConnectionStatus(isConnected);
+                // @ts-ignore - Accessing internal method of custom element
+                statusButtonElement.updateConnectionStatus(isConnected)
             }
-          }
+        }
 
-          const emitPlaybackInfo = () => {
+        // Playback info handling
+        const emitPlaybackInfo = () => {
             if (!socket || socket.readyState !== WebSocket.OPEN) {
-                console.warn('WebNowPlaying: Cannot emit playback info: WebSocket not connected');
-                return;
+                console.warn('WebNowPlaying: Cannot emit playback info: WebSocket not connected')
+                return
             }
-        
-            const nowPlayingItem = musicKit.player?.nowPlayingItem;
+
+            const nowPlayingItem = musicKit.player?.nowPlayingItem
             if (!nowPlayingItem) {
-                console.debug('WebNowPlaying: No track currently playing');
-                return;
+                console.debug('WebNowPlaying: No track currently playing')
+                return
             }
-        
+
             try {
                 const info = [
                     `PLAYER:Cider`,
@@ -143,192 +101,87 @@ const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = defineP
                     `ARTIST:${nowPlayingItem.artistName || 'Unknown Artist'}`,
                     `ALBUM:${nowPlayingItem.albumName || 'Unknown Album'}`,
                     `COVER:${nowPlayingItem.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || ''}`,
-                    `DURATION:${(nowPlayingItem.playbackDuration || 0) * 1000}`, // Convert to milliseconds
-                    `POSITION:${(musicKit.player.currentPlaybackTime || 0) * 1000}`, // Convert to milliseconds
+                    `DURATION:${(nowPlayingItem.playbackDuration || 0) * 1000}`,
+                    `POSITION:${(musicKit.player.currentPlaybackTime || 0) * 1000}`,
                     `VOLUME:${Math.round(cider.audio.volume * 100)}`,
                     `RATING:${nowPlayingItem.rating || 0}`,
                     `REPEAT:${musicKit.player.repeatMode}`,
                     `SHUFFLE:${musicKit.player.shuffleMode ? 1 : 0}`
-                ].join('\n');
-        
-                socket.send(info);
+                ].join('\n')
+                socket.send(info)
             } catch (error) {
-                console.error(`WebNowPlaying: Failed to send playback info: ${error}`);
+                console.error(`WebNowPlaying: Failed to send playback info: ${error}`)
             }
-        };
+        }
 
-            const handleWebNowPlayingCommand = (rawCommand: string) => {
-                const commandParts = rawCommand.trim().split(' ');
-                const command = commandParts[0].toUpperCase();
-                const value = commandParts[1];
-    
-                try {
-                    switch (command) {
-                        case 'PLAYPAUSE':
-                            cider.playbackService.playPause();
-                            break;
-                        case 'PLAY':
-                            cider.playbackService.play();
-                            break;
-                        case 'PAUSE':
-                            cider.playbackService.pause();
-                            break;
-                        case 'NEXT':
-                            cider.playbackService.next();
-                            break;
-                        case 'PREVIOUS':
-                            cider.playbackService.previous();
-                            break;
-                        case 'STOP':
-                            cider.playbackService.stop();
-                            break;
-                        case 'REPEAT':
-                            cider.playbackService.toggleRepeat();
-                            break;
-                        case 'SHUFFLE':
-                            cider.playbackService.toggleShuffle();
-                            break;
-                        case 'SETPOSITION':
-                            if (value) {
-                                const position = parseFloat(value);
-                                if (!isNaN(position)) {
-                                    cider.playbackService.seekTo(position / 1000); // Convert to seconds
-                                }
-                            }
-                            break;
-                        case 'SETVOLUME':
-                            if (value) {
-                                const volume = Math.min(Math.max(parseFloat(value), 0), 100);
-                                if (!isNaN(volume)) {
-                                    cider.audio.volume = volume / 100;
-                                }
-                            }
-                            break;
-                    }
+        // Command handling
+        const handleWebNowPlayingCommand = (rawCommand: string) => {
+            const commandParts = rawCommand.trim().split(' ')
+            const command = commandParts[0].toUpperCase()
+            const value = commandParts[1]
 
-            
-            
-                // Update playback info after command execution
-                setTimeout(emitPlaybackInfo, 100);
+            try {
+                switch (command) {
+                    case 'PLAYPAUSE': cider.playbackService.playPause(); break
+                    case 'PLAY': cider.playbackService.play(); break
+                    case 'PAUSE': cider.playbackService.pause(); break
+                    case 'NEXT': cider.playbackService.next(); break
+                    case 'PREVIOUS': cider.playbackService.previous(); break
+                    case 'STOP': cider.playbackService.stop(); break
+                    case 'REPEAT': cider.playbackService.toggleRepeat(); break
+                    case 'SHUFFLE': cider.playbackService.toggleShuffle(); break
+                    case 'SETPOSITION':
+                        if (value) {
+                            const position = parseFloat(value)
+                            if (!isNaN(position)) {
+                                cider.playbackService.seekTo(position / 1000)
+                            }
+                        }
+                        break
+                    case 'SETVOLUME':
+                        if (value) {
+                            const volume = Math.min(Math.max(parseFloat(value), 0), 100)
+                            if (!isNaN(volume)) {
+                                cider.audio.volume = volume / 100
+                            }
+                        }
+                        break
+                }
+                setTimeout(emitPlaybackInfo, 100)
             } catch (error) {
-                console.error(`WebNowPlaying: Error handling command ${command}:`, error);
+                console.error(`WebNowPlaying: Error handling command ${command}:`, error)
             }
-        };
+        }
 
-        // Initialize WebSocket connection
-        initWebSocket();
+        // Initialize WebSocket and register listeners
+        initWebSocket()
 
-        // Register playback listeners
-        PluginKit.useMessageListener('playbackStateDidChange', emitPlaybackInfo);
-        PluginKit.useMessageListener('nowPlayingItemDidChange', emitPlaybackInfo);
-        PluginKit.useMessageListener('playbackTimeDidChange', emitPlaybackInfo);
-        PluginKit.useMessageListener('volumeDidChange', emitPlaybackInfo);
-
+        PluginKit.useMessageListener('playbackStateDidChange', emitPlaybackInfo)
+        PluginKit.useMessageListener('nowPlayingItemDidChange', emitPlaybackInfo)
+        PluginKit.useMessageListener('playbackTimeDidChange', emitPlaybackInfo)
+        PluginKit.useMessageListener('volumeDidChange', emitPlaybackInfo)
         PluginKit.useMessageListener('unload', () => {
             if (socket?.readyState === WebSocket.OPEN) {
-                socket.close();
-                socket = null;
+                socket.close()
+                socket = null
             }
-        });
+        })
 
-
-        
-        addImmersiveLayout({
-            name: "My layout",
-            identifier: "my-layout",
-            component: customElementName('immersive-layout'),
-            type: 'normal',
-        });
-
+        // Add connection status modal
         addMainMenuEntry({
-            label: "Go to my page",
-            onClick() {
-                goToPage({
-                    name: 'page-helloworld'
-                });
-            },
-        });
-
-        addMainMenuEntry({
-            label: "Modal example",
+            label: "Show Connection Status",
             onClick() {
                 const { closeDialog, openDialog, dialogElement } = createModal({
                     escClose: true,
-                });
-                const content = document.createElement(customElementName('modal-example'));
+                })
+                const content = document.createElement(customElementName('status-button'))
                 // @ts-ignore
-                content._props.closeFn = closeDialog;
-                dialogElement.appendChild(content);
-                openDialog();
+                content._props.closeFn = closeDialog
+                dialogElement.appendChild(content)
+                openDialog()
             },
-        });
-
-        addMainMenuEntry({
-            label: "Connection Status",
-            onClick() {
-                goToPage({
-                    name: 'page-helloworld'
-                });
-            },
-        });
-
-        addMainMenuEntry({
-            label: "Show Connection Modal",
-            onClick() {
-                const { closeDialog, openDialog, dialogElement } = createModal({
-                    escClose: true,
-                });
-                const content = document.createElement(customElementName('status-button'));
-                // @ts-ignore
-                content._props.closeFn = closeDialog;
-                dialogElement.appendChild(content);
-                openDialog();
-            },
-        });
-
-        addImmersiveMenuEntry({
-            label: "Go to my page",
-            onClick() {
-                goToPage({
-                    name: 'page-helloworld'
-                });
-            },
-        });
-
-        addCustomButton({
-            element: '♥',
-            location: 'chrome-top/right',
-            title: 'Click me!',
-            menuElement: customElementName('hello-world'),
-        });
-
-        const audio = useCiderAudio();
-        audio.subscribe('ready', () => {
-            console.log("CiderAudio is ready!", audio.context);
-        });
-
-        addMediaItemContextMenuEntry({
-            label: 'Send to plugin',
-            onClick(item) {
-                console.log('Got this item', item);
-            },
-        });
-        
+        })
     }
-});
-        
-    
+})
 
-export const cfg = setupConfig({
-    favoriteColor: <'red' | 'green' | 'blue'>'blue',
-    count: <number>0,
-    booleanOption: <boolean>false,
-});
-        
-export function useConfig() {
-    return cfg.value;
-}
-export { setupConfig, customElementName, goToPage, useCPlugin };
-export default plugin;
-
-   
+export default plugin
