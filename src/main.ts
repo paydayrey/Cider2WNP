@@ -104,7 +104,7 @@ const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = defineP
                 return;
             }
         
-            const nowPlayingItem = musicKit.player?.nowPlayingItem;
+            const nowPlayingItem = musicKit?.nowPlayingItem;
             if (!nowPlayingItem) {
                 console.debug('WebNowPlaying: No track currently playing');
                 return;
@@ -113,17 +113,17 @@ const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = defineP
             try {
                 const info = [
                     `PLAYER:Cider`,
-                    `STATE:${musicKit.player.isPlaying ? 1 : 2}`,
+                    `STATE:${musicKit.isPlaying ? 1 : 2}`,
                     `TITLE:${nowPlayingItem.title || 'Unknown Title'}`,
                     `ARTIST:${nowPlayingItem.artistName || 'Unknown Artist'}`,
                     `ALBUM:${nowPlayingItem.albumName || 'Unknown Album'}`,
                     `COVER:${nowPlayingItem.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || ''}`,
                     `DURATION:${(nowPlayingItem.playbackDuration || 0) * 1000}`, // Convert to milliseconds
-                    `POSITION:${(musicKit.player.currentPlaybackTime || 0) * 1000}`, // Convert to milliseconds
+                    `POSITION:${(musicKit.currentPlaybackTime || 0) * 1000}`, // Convert to milliseconds
                     `VOLUME:${Math.round(cider.audio.volume * 100)}`,
                     `RATING:${nowPlayingItem.rating || 0}`,
-                    `REPEAT:${musicKit.player.repeatMode}`,
-                    `SHUFFLE:${musicKit.player.shuffleMode ? 1 : 0}`
+                    `REPEAT:${musicKit.repeatMode}`,
+                    `SHUFFLE:${musicKit.shuffleMode ? 1 : 0}`
                 ].join('\n');
         
                 socket.send(info);
