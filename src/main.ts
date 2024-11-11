@@ -104,7 +104,7 @@ const { plugin, setupConfig, customElementName, goToPage, useCPlugin } = defineP
                 return;
             }
         
-            const nowPlayingItem = musicKit?.nowPlayingItem;
+            const nowPlayingItem = musicKit.nowPlayingItem;
             if (!nowPlayingItem) {
                 console.debug('WebNowPlaying: No track currently playing');
                 return;
